@@ -86,7 +86,7 @@ private suspend fun lookup(term: String, lang: String): Concept {
             if (name.isNotBlank() && !name.equals(term, true)) related.add(name)
         }
     }
-    Concept(term, edges, related.distinct())
+    return Concept(term, edges, related.distinct())
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
