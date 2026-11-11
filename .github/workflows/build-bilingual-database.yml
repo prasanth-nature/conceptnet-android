@@ -7,7 +7,7 @@ on:
       - ".github/workflows/build-bilingual-database.yml"
     branches: [ main ]
 permissions:
-  contents: read
+  contents: write
   actions: read
 jobs:
   build-database:
@@ -33,16 +33,30 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y zstd
-          tar --zstd -cf conceptnet-en-ta-5.7.0.tar.zst conceptnet-en-ta-5.7.0.sqlite
-          sha256sum conceptnet-en-ta-5.7.0.tar.zst > conceptnet-en-ta-5.7.0.tar.zst.sha256
+          gzip -9 -c conceptnet-en-ta-5.7.0.sqlite > conceptnet-en-ta-5.7.0.sqlite.gz
+          sha256sum conceptnet-en-ta-5.7.0.sqlite.gz > conceptnet-en-ta-5.7.0.sqlite.gz.sha256
           ls -lh conceptnet-en-ta-5.7.0*
       - name: Upload bilingual database
         uses: actions/upload-artifact@v4
         with:
           name: ConceptNet-English-Tamil-5.7.0
           path: |
-            conceptnet-en-ta-5.7.0.tar.zst
-            conceptnet-en-ta-5.7.0.tar.zst.sha256
+            conceptnet-en-ta-5.7.0.sqlite.gz
+            conceptnet-en-ta-5.7.0.sqlite.gz.sha256
           compression-level: 0
           if-no-files-found: error
           retention-days: 90
+      - name: Publish downloadable database release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: conceptnet-en-ta-5.7.0
+          name: ConceptNet English-Tamil database 5.7.0
+          body: |
+            Complete English and Tamil subset of ConceptNet 5.7.0.
+            Includes en-en, ta-ta, en-ta and ta-en assertions.
+            The original relation, weight and per-assertion source metadata are preserved.
+            Database license and source attribution are recorded in build_info and per-edge metadata.
+          files: |
+            conceptnet-en-ta-5.7.0.sqlite.gz
+            conceptnet-en-ta-5.7.0.sqlite.gz.sha256
+          make_latest: false
