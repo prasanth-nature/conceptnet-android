@@ -89,6 +89,8 @@ private suspend fun api(path: String): JSONObject = withContext(Dispatchers.IO) 
 
 private suspend fun lookup(context: Context, term: String, lang: String): Concept {
     val clean = term.trim()
+    val fullGraphResult = withContext(Dispatchers.IO) { FullGraphStore.lookup(context, clean, lang) }
+    if (fullGraphResult != null) return fullGraphResult
     val store = HybridStore(context)
     try {
         val slug = URLEncoder.encode(clean.replace(' ', '_'), "UTF-8").replace("+", "%20")
@@ -134,7 +136,29 @@ private fun ConceptNetApp(context: Context) {
     var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableIntStateOf(0) }
     var saved by remember { mutableStateOf(prefs.getStringSet("saved", emptySet())?.toSet() ?: emptySet()) }
+    var fullGraphReady by remember { mutableStateOf(FullGraphStore.isInstalled(context)) }
+    var graphDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
     val scope = rememberCoroutineScope()
+
+    fun downloadFullGraph() {
+        if (graphDownloading || fullGraphReady) return
+        graphDownloading = true
+        downloadProgress = 0f
+        scope.launch {
+            try {
+                FullGraphStore.download(context) { received, total ->
+                    if (total > 0L) downloadProgress = (received.toFloat() / total).coerceIn(0f, 1f)
+                }
+                fullGraphReady = true
+                error = null
+            } catch (e: Exception) {
+                error = e.message ?: "Full graph download failed."
+            } finally {
+                graphDownloading = false
+            }
+        }
+    }
 
     fun search(value: String) {
         if (value.isBlank()) return
@@ -181,7 +205,7 @@ private fun ConceptNetApp(context: Context) {
                     { c -> if (saved.contains(c)) remove(c) else save(c) }, Modifier.padding(padding))
                 1 -> GraphPage(concept, ::search, Modifier.padding(padding))
                 2 -> SavedPage(saved, ::search, ::remove, Modifier.padding(padding))
-                else -> AboutPage(Modifier.padding(padding))
+                else -> AboutPage(fullGraphReady, graphDownloading, downloadProgress, ::downloadFullGraph, Modifier.padding(padding))
             }
         }
     }
@@ -322,18 +346,51 @@ private fun SavedPage(saved: Set<String>, search: (String) -> Unit, remove: (Str
 }
 
 @Composable
-private fun AboutPage(modifier: Modifier = Modifier) {
+private fun AboutPage(
+    graphReady: Boolean,
+    downloading: Boolean,
+    progress: Float,
+    onDownload: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(modifier.fillMaxSize().padding(20.dp)) {
         Text("About ConceptNet", fontSize = 25.sp, fontWeight = FontWeight.Bold, color = Navy)
         Spacer(Modifier.height(12.dp))
-        Text("ConceptNet is a multilingual commonsense knowledge graph. This app queries its public read-only API and presents concepts, semantic relationships, and related terms.")
+        Text("Explore the complete English and Tamil subset of ConceptNet 5.7.0, including relationships within and between both languages.")
+        Spacer(Modifier.height(18.dp))
+        Text("Full offline knowledge graph", fontWeight = FontWeight.Bold, color = Navy)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (graphReady) "The complete English-Tamil database is installed on this device."
+            else "Download the complete English-Tamil database once. Searches will then work offline without the ConceptNet API.",
+            color = Muted
+        )
+        Spacer(Modifier.height(12.dp))
+        if (downloading) {
+            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+            Text("Downloading and installing database: ${(progress * 100).toInt()}%", color = Muted)
+        } else if (graphReady) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF287A4B))
+                Spacer(Modifier.width(8.dp))
+                Text("Offline graph installed", color = Color(0xFF287A4B))
+            }
+        } else {
+            Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Download, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Download full offline graph")
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Text("Dataset details", fontWeight = FontWeight.Bold, color = Navy)
+        Text("ConceptNet 5.7.0 · English (en) + Tamil (ta)")
+        Text("Included edges: en-en, ta-ta, en-ta and ta-en")
+        Text("Stored fields: relation, start/end concept, weight and original assertion metadata")
         Spacer(Modifier.height(16.dp))
-        Text("Data source", fontWeight = FontWeight.Bold)
-        Text("ConceptNet 5 · https://api.conceptnet.io")
-        Spacer(Modifier.height(12.dp))
-        Text("Internet connection is required for live searches. Saved concept names are stored locally on this device.")
-        Spacer(Modifier.height(12.dp))
-        Text("ConceptNet data is licensed under CC BY-SA 4.0. See the official documentation for attribution requirements.")
+        Text("Source and attribution", fontWeight = FontWeight.Bold, color = Navy)
+        Text("https://github.com/commonsense/conceptnet5/wiki/Downloads")
+        Text("ConceptNet is licensed under CC BY-SA 4.0; individual assertions retain their source licensing metadata.")
     }
 }
 
