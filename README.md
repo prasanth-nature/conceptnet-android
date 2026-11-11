@@ -1,20 +1,25 @@
 # ConceptNet Android
 
-Native Android application built with Kotlin and Jetpack Compose.
+Native Android app built with Kotlin and Jetpack Compose. The supported search languages are **English (en)** and **Tamil (ta)** only.
 
-## Features
-- Live concept lookup using the public ConceptNet API
-- Semantic relations and edge weights
-- Related concept lookup
-- Simple knowledge graph visualization
-- Locally saved concepts
-- Language code selection (for example: en, ta, fr)
+## Hybrid online/offline search
+
+1. **Online:** Query the public ConceptNet 5 API when it is reachable.
+2. **Local cache:** Store successful concept lookups and their semantic edges in an on-device SQLite database.
+3. **Offline starter graph:** Include a small bilingual starter vocabulary for common concepts such as tree/மரம், water/நீர், house/வீடு, book/புத்தகம் and dog/நாய்.
+4. **Fallback:** If the API is unavailable, search the SQLite cache and then the bundled starter graph.
+
+The bundled starter graph is intentionally small. It is not a complete offline copy of ConceptNet. Full offline coverage would require distributing a much larger licensed dataset and building a compact indexed database.
 
 ## Build
-Open this repository in Android Studio with JDK 17 and Android SDK Platform 35, then select **Build > Build APK(s)**.
 
-Alternatively, GitHub Actions builds a debug APK on every push to `main`, and can also be started manually from **Actions > Build Android APK > Run workflow**.
+Open in Android Studio with JDK 17 and Android SDK Platform 35, or use **Actions → Build Android APK**. GitHub Actions builds a debug APK on pushes to `main`.
 
-## API and attribution
-Data source: [ConceptNet](https://conceptnet.io/) and [ConceptNet API](https://api.conceptnet.io/).
-ConceptNet data is licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). Retain attribution and comply with the share-alike terms when redistributing adapted data.
+## Data and attribution
+
+- [ConceptNet](https://conceptnet.io/)
+- [ConceptNet API documentation](https://github.com/commonsense/conceptnet5/wiki/API)
+- [ConceptNet downloads](https://github.com/commonsense/conceptnet5/wiki/Downloads)
+- [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/)
+
+ConceptNet-derived data must retain attribution and comply with the applicable share-alike terms.
