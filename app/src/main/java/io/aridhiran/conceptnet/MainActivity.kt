@@ -44,8 +44,8 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private data class Edge(val relation: String, val start: String, val end: String, val weight: Double)
-private data class Concept(val term: String, val edges: List<Edge>, val related: List<String>)
+internal data class Edge(val relation: String, val start: String, val end: String, val weight: Double)
+internal data class Concept(val term: String, val edges: List<Edge>, val related: List<String>)
 
 private fun label(uri: String) = uri.substringAfterLast("/").replace('_', ' ').replaceFirstChar { it.uppercase() }
 
@@ -223,7 +223,7 @@ private fun Home(
         Spacer(Modifier.height(14.dp))
         Text(if (lang == "ta") "மாதிரிச் சொற்கள்" else "Try a concept", fontWeight = FontWeight.SemiBold, color = Navy)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (lang == "ta") listOf("மரம்", "நீர்", "வீடு", "நாய்") else listOf("tree", "water", "book", "dog").forEach {
+            (if (lang == "ta") listOf("மரம்", "நீர்", "வீடு", "நாய்") else listOf("tree", "water", "book", "dog")).forEach {
                 SuggestionChip(onClick = { search(it) }, label = { Text(it) })
             }
         }
