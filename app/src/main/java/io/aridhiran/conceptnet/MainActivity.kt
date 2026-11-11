@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -49,18 +50,41 @@ private data class Concept(val term: String, val edges: List<Edge>, val related:
 private fun label(uri: String) = uri.substringAfterLast("/").replace('_', ' ').replaceFirstChar { it.uppercase() }
 
 private suspend fun api(path: String): JSONObject = withContext(Dispatchers.IO) {
-    val connection = (URL("https://api.conceptnet.io$path").openConnection() as HttpURLConnection)
-    connection.requestMethod = "GET"
-    connection.connectTimeout = 15000
-    connection.readTimeout = 20000
-    connection.setRequestProperty("Accept", "application/ld+json")
-    try {
-        val code = connection.responseCode
-        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-        val body = stream.bufferedReader().use { it.readText() }
-        if (code !in 200..299) error("ConceptNet API returned HTTP $code")
-        JSONObject(body)
-    } finally { connection.disconnect() }
+    var attempt = 0
+    while (attempt < 3) {
+        val connection = (URL("https://api.conceptnet.io$path").openConnection() as HttpURLConnection)
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 15000
+        connection.readTimeout = 20000
+        connection.setRequestProperty("Accept", "application/ld+json")
+        var retry = false
+        try {
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code in 200..299) return@withContext JSONObject(body)
+            if (code == 429 || code == 502 || code == 503 || code == 504) {
+                retry = attempt < 2
+                if (!retry) {
+                    val reason = when (code) {
+                        429 -> "rate limit reached"
+                        502, 503, 504 -> "ConceptNet service is temporarily unavailable"
+                        else -> "request failed"
+                    }
+                    error("$reason (HTTP $code). Please try again in a little while.")
+                }
+            } else {
+                error("ConceptNet API returned HTTP $code. Check the search term and try again.")
+            }
+        } finally {
+            connection.disconnect()
+        }
+        if (retry) {
+            delay(1000L shl attempt)
+            attempt++
+        }
+    }
+    error("ConceptNet service is temporarily unavailable. Please try again later.")
 }
 
 private suspend fun lookup(term: String, lang: String): Concept {
