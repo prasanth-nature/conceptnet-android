@@ -1,0 +1,48 @@
+name: Build English-Tamil ConceptNet database
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/build_bilingual_db.py"
+      - ".github/workflows/build-bilingual-database.yml"
+    branches: [ main ]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download ConceptNet 5.7.0 assertions
+        run: |
+          curl -fL --retry 5 --retry-delay 5 \
+            "https://s3.amazonaws.com/conceptnet/downloads/2019/edges/conceptnet-assertions-5.7.0.csv.gz" \
+            -o conceptnet-assertions-5.7.0.csv.gz
+          gzip -t conceptnet-assertions-5.7.0.csv.gz
+          ls -lh conceptnet-assertions-5.7.0.csv.gz
+      - name: Build English-Tamil SQLite database
+        run: |
+          python3 tools/build_bilingual_db.py \
+            --input conceptnet-assertions-5.7.0.csv.gz \
+            --output conceptnet-en-ta-5.7.0.sqlite
+          sqlite3 conceptnet-en-ta-5.7.0.sqlite "PRAGMA integrity_check;"
+          sqlite3 conceptnet-en-ta-5.7.0.sqlite "SELECT key,value FROM build_info;"
+      - name: Compress database
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd
+          tar --zstd -cf conceptnet-en-ta-5.7.0.tar.zst conceptnet-en-ta-5.7.0.sqlite
+          sha256sum conceptnet-en-ta-5.7.0.tar.zst > conceptnet-en-ta-5.7.0.tar.zst.sha256
+          ls -lh conceptnet-en-ta-5.7.0*
+      - name: Upload bilingual database
+        uses: actions/upload-artifact@v4
+        with:
+          name: ConceptNet-English-Tamil-5.7.0
+          path: |
+            conceptnet-en-ta-5.7.0.tar.zst
+            conceptnet-en-ta-5.7.0.tar.zst.sha256
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 90
