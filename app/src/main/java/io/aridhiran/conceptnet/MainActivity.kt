@@ -87,30 +87,40 @@ private suspend fun api(path: String): JSONObject = withContext(Dispatchers.IO) 
     error("ConceptNet service is temporarily unavailable. Please try again later.")
 }
 
-private suspend fun lookup(term: String, lang: String): Concept {
-    val slug = URLEncoder.encode(term.trim().replace(' ', '_'), "UTF-8")
-    val path = "/c/${lang.ifBlank { "en" }}/$slug"
-    val data = api("$path?limit=50&format=json")
-    val edges = mutableListOf<Edge>()
-    val array = data.optJSONArray("edges")
-    if (array != null) for (i in 0 until array.length()) {
-        val e = array.optJSONObject(i) ?: continue
-        val rel = e.optJSONObject("rel")?.optString("label").orEmpty()
-        val start = e.optJSONObject("start")?.optString("label").orEmpty()
-        val end = e.optJSONObject("end")?.optString("label").orEmpty()
-        val weight = e.optDouble("weight", 1.0)
-        edges.add(Edge(rel.ifBlank { "RelatedTo" }, start, end, weight))
-    }
-    val related = mutableListOf<String>()
-    runCatching {
-        val r = api("/related$path?limit=25&format=json").optJSONArray("related")
-        if (r != null) for (i in 0 until r.length()) {
-            val item = r.optJSONObject(i) ?: continue
-            val name = item.optString("label", label(item.optString("@id")))
-            if (name.isNotBlank() && !name.equals(term, true)) related.add(name)
+private suspend fun lookup(context: Context, term: String, lang: String): Concept {
+    val clean = term.trim()
+    val store = HybridStore(context)
+    try {
+        val slug = URLEncoder.encode(clean.replace(' ', '_'), "UTF-8").replace("+", "%20")
+        val data = api("/c/$lang/$slug?limit=80&format=json")
+        val edges = mutableListOf<Edge>()
+        val related = linkedSetOf<String>()
+        val array = data.optJSONArray("edges")
+        if (array != null) for (i in 0 until array.length()) {
+            val e = array.optJSONObject(i) ?: continue
+            val relation = e.optJSONObject("rel")?.optString("label").orEmpty().ifBlank { "RelatedTo" }
+            val startLabel = e.optJSONObject("start")?.optString("label").orEmpty()
+            val endLabel = e.optJSONObject("end")?.optString("label").orEmpty()
+            edges.add(Edge(relation, startLabel, endLabel, e.optDouble("weight", 1.0)))
+            if (startLabel.isNotBlank() && !startLabel.equals(clean, true)) related.add(startLabel)
+            if (endLabel.isNotBlank() && !endLabel.equals(clean, true)) related.add(endLabel)
         }
+        if (edges.isNotEmpty()) {
+            val result = Concept(clean, edges, related.toList())
+            withContext(Dispatchers.IO) { store.put(lang, result) }
+            return result
+        }
+    } catch (_: Exception) {
+        // The live service is optional; continue with local data.
     }
-    return Concept(term, edges, related.distinct())
+    val cached = withContext(Dispatchers.IO) { store.get(lang, clean) }
+    if (cached != null) return cached
+    val bundled = withContext(Dispatchers.IO) { store.seed(lang, clean) }
+    if (bundled != null) return bundled
+    error(if (lang == "ta")
+        "இணையத் தரவும் உள்ளகத் தரவும் கிடைக்கவில்லை. மரம், நீர், வீடு, புத்தகம், நாய் போன்ற சொல்லை முயற்சிக்கவும்."
+    else
+        "No online result or local cache. Try a bundled term such as tree, water, house, book or dog.")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -133,7 +143,7 @@ private fun ConceptNetApp(context: Context) {
         loading = true
         error = null
         scope.launch {
-            try { concept = lookup(value, lang) }
+            try { concept = lookup(context, value, lang) }
             catch (e: Exception) { error = e.message ?: "Search failed. Check your internet connection." }
             finally { loading = false }
         }
@@ -201,18 +211,19 @@ private fun Home(
         Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Language", color = Muted, fontSize = 12.sp)
             Spacer(Modifier.width(8.dp))
-            OutlinedTextField(value = lang, onValueChange = { onLang(it.take(3)) },
-                modifier = Modifier.width(78.dp), singleLine = true)
+            FilterChip(selected = lang == "en", onClick = { onLang("en") }, label = { Text("English") })
+            Spacer(Modifier.width(4.dp))
+            FilterChip(selected = lang == "ta", onClick = { onLang("ta") }, label = { Text("தமிழ்") })
             Spacer(Modifier.weight(1f))
             Button(onClick = { search(query) }, enabled = query.isNotBlank() && !loading) {
                 if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else Text("Search")
+                else Text(if (lang == "ta") "தேடு" else "Search")
             }
         }
         Spacer(Modifier.height(14.dp))
-        Text("Try a concept", fontWeight = FontWeight.SemiBold, color = Navy)
+        Text(if (lang == "ta") "மாதிரிச் சொற்கள்" else "Try a concept", fontWeight = FontWeight.SemiBold, color = Navy)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("dog", "book", "music", "science").forEach {
+            if (lang == "ta") listOf("மரம்", "நீர்", "வீடு", "நாய்") else listOf("tree", "water", "book", "dog").forEach {
                 SuggestionChip(onClick = { search(it) }, label = { Text(it) })
             }
         }
